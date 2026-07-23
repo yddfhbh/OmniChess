@@ -1,6 +1,6 @@
 use std::fmt;
 
-pub const BOARD_SIZE: u8 = 8;
+use crate::constants::BOARD_SIZE;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Square {
@@ -10,7 +10,7 @@ pub struct Square {
 
 impl Square {
     pub const fn new(file: u8, rank: u8) -> Option<Self> {
-        if file < BOARD_SIZE && rank < BOARD_SIZE {
+        if file < BOARD_SIZE as u8 && rank < BOARD_SIZE as u8 {
             Some(Self { file, rank })
         } else {
             None
