@@ -70,6 +70,14 @@ impl Action {
     }
 }
 
+impl fmt::Display for Action {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Move(action) => write!(formatter, "{action}"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{Action, MoveAction};

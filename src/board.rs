@@ -1,4 +1,5 @@
 use std::array::from_fn;
+use std::fmt;
 
 use crate::constants::BOARD_SIZE;
 use crate::piece::{Color, Piece, PieceKind};
@@ -83,23 +84,30 @@ impl Board {
     }
 
     pub fn print(&self) {
-        println!();
+        println!("{self}");
+    }
+}
 
+impl fmt::Display for Board {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         for rank in (0..BOARD_SIZE).rev() {
-            print!("{} ", rank + 1);
+            write!(formatter, "{} ", rank + 1)?;
 
             for file in 0..BOARD_SIZE {
+                if file > 0 {
+                    write!(formatter, " ")?;
+                }
+
                 match &self.squares[rank][file] {
-                    Some(piece) => print!("{} ", piece.symbol()),
-                    None => print!(". "),
+                    Some(piece) => write!(formatter, "{}", piece.symbol())?,
+                    None => write!(formatter, ".")?,
                 }
             }
 
-            println!();
+            writeln!(formatter)?;
         }
 
-        println!("  a b c d e f g h");
-        println!();
+        write!(formatter, "  a b c d e f g h")
     }
 }
 
