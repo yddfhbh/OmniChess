@@ -19,9 +19,7 @@ pub fn is_move_legal(board: &Board, action: MoveAction) -> bool {
         PieceKind::Rook => is_rook_move_legal(board, action),
         PieceKind::Queen => is_queen_move_legal(board, action),
         PieceKind::King => is_king_move_legal(action),
-
-        // 다음 단계에서 구현
-        PieceKind::Grasshopper => false,
+        PieceKind::Grasshopper => is_grasshopper_move_legal(board, action),
     }
 }
 
@@ -127,6 +125,47 @@ fn is_king_move_legal(action: MoveAction) -> bool {
     let rank_delta = (i16::from(action.to.rank()) - i16::from(action.from.rank())).abs();
 
     file_delta <= 1 && rank_delta <= 1 && (file_delta != 0 || rank_delta != 0)
+}
+
+fn is_grasshopper_move_legal(board: &Board, action: MoveAction) -> bool {
+    let from_file = i16::from(action.from.file());
+    let from_rank = i16::from(action.from.rank());
+    let to_file = i16::from(action.to.file());
+    let to_rank = i16::from(action.to.rank());
+
+    let file_delta = to_file - from_file;
+    let rank_delta = to_rank - from_rank;
+
+    let straight = file_delta == 0 || rank_delta == 0;
+    let diagonal = file_delta.abs() == rank_delta.abs();
+
+    if !straight && !diagonal {
+        return false;
+    }
+
+    let file_step = file_delta.signum();
+    let rank_step = rank_delta.signum();
+
+    let mut file = from_file + file_step;
+    let mut rank = from_rank + rank_step;
+
+    while file != to_file || rank != to_rank {
+        let square = Square::new(file as u8, rank as u8)
+            .expect("그래스호퍼 이동 경로는 보드 안이어야 합니다.");
+
+        if board.piece_at(square).is_some() {
+            let landing_file = file + file_step;
+            let landing_rank = rank + rank_step;
+
+            return landing_file == to_file && landing_rank == to_rank;
+        }
+
+        file += file_step;
+        rank += rank_step;
+    }
+
+    // 도착 칸 전에 뛰어넘을 기물을 발견하지 못함
+    false
 }
 
 fn is_path_clear(board: &Board, action: MoveAction) -> bool {
@@ -383,5 +422,82 @@ mod tests {
         place(&mut board, "e4", Color::White, PieceKind::King);
 
         assert!(!is_move_legal(&board, move_action("e4f6")));
+    }
+
+    #[test]
+    fn grasshopper_lands_immediately_after_piece() {
+        let mut board = Board::empty();
+
+        place(&mut board, "a1", Color::White, PieceKind::Grasshopper);
+
+        place(&mut board, "a4", Color::White, PieceKind::Pawn);
+
+        assert!(is_move_legal(&board, move_action("a1a5")));
+    }
+
+    #[test]
+    fn grasshopper_can_jump_enemy_piece() {
+        let mut board = Board::empty();
+
+        place(&mut board, "c1", Color::White, PieceKind::Grasshopper);
+
+        place(&mut board, "e3", Color::Black, PieceKind::Bishop);
+
+        assert!(is_move_legal(&board, move_action("c1f4")));
+    }
+
+    #[test]
+    fn grasshopper_cannot_move_without_hurdle() {
+        let mut board = Board::empty();
+
+        place(&mut board, "a1", Color::White, PieceKind::Grasshopper);
+
+        assert!(!is_move_legal(&board, move_action("a1a5")));
+    }
+
+    #[test]
+    fn grasshopper_cannot_land_farther_than_next_square() {
+        let mut board = Board::empty();
+
+        place(&mut board, "a1", Color::White, PieceKind::Grasshopper);
+
+        place(&mut board, "a4", Color::Black, PieceKind::Pawn);
+
+        assert!(!is_move_legal(&board, move_action("a1a6")));
+    }
+
+    #[test]
+    fn grasshopper_cannot_land_on_hurdle() {
+        let mut board = Board::empty();
+
+        place(&mut board, "a1", Color::White, PieceKind::Grasshopper);
+
+        place(&mut board, "a4", Color::Black, PieceKind::Pawn);
+
+        assert!(!is_move_legal(&board, move_action("a1a4")));
+    }
+
+    #[test]
+    fn grasshopper_rejects_knight_shaped_move() {
+        let mut board = Board::empty();
+
+        place(&mut board, "d4", Color::White, PieceKind::Grasshopper);
+
+        place(&mut board, "e5", Color::Black, PieceKind::Pawn);
+
+        assert!(!is_move_legal(&board, move_action("d4f5")));
+    }
+
+    #[test]
+    fn grasshopper_may_capture_on_landing_square() {
+        let mut board = Board::empty();
+
+        place(&mut board, "a1", Color::White, PieceKind::Grasshopper);
+
+        place(&mut board, "a3", Color::White, PieceKind::Pawn);
+
+        place(&mut board, "a4", Color::Black, PieceKind::Queen);
+
+        assert!(is_move_legal(&board, move_action("a1a4")));
     }
 }
