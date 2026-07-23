@@ -18,9 +18,10 @@ pub fn is_move_legal(board: &Board, action: MoveAction) -> bool {
         PieceKind::Bishop => is_bishop_move_legal(board, action),
         PieceKind::Rook => is_rook_move_legal(board, action),
         PieceKind::Queen => is_queen_move_legal(board, action),
+        PieceKind::King => is_king_move_legal(action),
 
         // 다음 단계에서 구현
-        PieceKind::King | PieceKind::Grasshopper => false,
+        PieceKind::Grasshopper => false,
     }
 }
 
@@ -118,6 +119,14 @@ fn is_queen_move_legal(board: &Board, action: MoveAction) -> bool {
     }
 
     is_path_clear(board, action)
+}
+
+fn is_king_move_legal(action: MoveAction) -> bool {
+    let file_delta = (i16::from(action.to.file()) - i16::from(action.from.file())).abs();
+
+    let rank_delta = (i16::from(action.to.rank()) - i16::from(action.from.rank())).abs();
+
+    file_delta <= 1 && rank_delta <= 1 && (file_delta != 0 || rank_delta != 0)
 }
 
 fn is_path_clear(board: &Board, action: MoveAction) -> bool {
@@ -342,5 +351,37 @@ mod tests {
         let board = Board::standard();
 
         assert!(!is_move_legal(&board, move_action("b1b1")));
+    }
+
+    #[test]
+    fn king_moves_one_square_in_any_direction() {
+        let mut board = Board::empty();
+
+        place(&mut board, "e4", Color::White, PieceKind::King);
+
+        assert!(is_move_legal(&board, move_action("e4e5")));
+        assert!(is_move_legal(&board, move_action("e4f5")));
+        assert!(is_move_legal(&board, move_action("e4f4")));
+        assert!(is_move_legal(&board, move_action("e4d3")));
+    }
+
+    #[test]
+    fn king_cannot_move_more_than_one_square() {
+        let mut board = Board::empty();
+
+        place(&mut board, "e4", Color::White, PieceKind::King);
+
+        assert!(!is_move_legal(&board, move_action("e4e6")));
+        assert!(!is_move_legal(&board, move_action("e4g4")));
+        assert!(!is_move_legal(&board, move_action("e4g6")));
+    }
+
+    #[test]
+    fn king_cannot_move_like_knight() {
+        let mut board = Board::empty();
+
+        place(&mut board, "e4", Color::White, PieceKind::King);
+
+        assert!(!is_move_legal(&board, move_action("e4f6")));
     }
 }
