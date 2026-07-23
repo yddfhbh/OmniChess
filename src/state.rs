@@ -57,10 +57,12 @@ pub struct GameState {
 }
 
 impl GameState {
+    /// Creates the standard starting position with White to move.
     pub fn standard() -> Self {
         Self::from_board(Board::standard(), Color::White)
     }
 
+    /// Builds a game state from a board and side to move.
     pub fn from_board(board: Board, side_to_move: Color) -> Self {
         Self {
             board,
@@ -70,33 +72,50 @@ impl GameState {
         }
     }
 
+    /// Returns an immutable view of the board.
     pub fn board(&self) -> &Board {
         &self.board
     }
 
+    /// Returns the side whose turn it is.
     pub fn side_to_move(&self) -> Color {
         self.side_to_move
     }
 
+    /// Returns the finished game result, if any.
     pub fn result(&self) -> Option<GameResult> {
         self.result
     }
 
+    /// Returns the number of plies played so far.
     pub fn ply(&self) -> u32 {
         self.ply
     }
 
+    /// Checks whether an action is legal in the current state.
     pub fn is_action_legal(&self, action: Action) -> Result<(), GameError> {
         if self.result.is_some() {
             return Err(GameError::GameAlreadyFinished);
         }
 
         match action {
-            Action::Move(move_action) => self.validate_move(move_action),
+            Action::Move(move_action) => {
+                self.validate_move_for_side(move_action, self.side_to_move)
+            }
         }
     }
 
+    /// Returns all legal actions for the side to move.
     pub fn legal_actions(&self) -> Vec<Action> {
+        self.legal_actions_for(self.side_to_move)
+    }
+
+    /// Returns all legal actions for the piece on the given square.
+    pub fn legal_actions_from(&self, from: Square) -> Vec<Action> {
+        self.legal_actions_from_for(self.side_to_move, from)
+    }
+
+    pub(crate) fn legal_actions_for(&self, side_to_move: Color) -> Vec<Action> {
         if self.result.is_some() {
             return Vec::new();
         }
@@ -106,14 +125,14 @@ impl GameState {
         for rank in 0..BOARD_SIZE as u8 {
             for file in 0..BOARD_SIZE as u8 {
                 let from = Square::new(file, rank).expect("board coordinates should be valid");
-                actions.extend(self.legal_actions_from(from));
+                actions.extend(self.legal_actions_from_for(side_to_move, from));
             }
         }
 
         actions
     }
 
-    pub fn legal_actions_from(&self, from: Square) -> Vec<Action> {
+    fn legal_actions_from_for(&self, side_to_move: Color, from: Square) -> Vec<Action> {
         if self.result.is_some() {
             return Vec::new();
         }
@@ -122,7 +141,7 @@ impl GameState {
             return Vec::new();
         };
 
-        if piece.color != self.side_to_move {
+        if piece.color != side_to_move {
             return Vec::new();
         }
 
@@ -137,7 +156,17 @@ impl GameState {
                     promotion: None,
                 });
 
-                if self.is_action_legal(action).is_ok() {
+                if self
+                    .validate_move_for_side(
+                        MoveAction {
+                            from,
+                            to,
+                            promotion: None,
+                        },
+                        side_to_move,
+                    )
+                    .is_ok()
+                {
                     actions.push(action);
                 }
             }
@@ -146,6 +175,7 @@ impl GameState {
         actions
     }
 
+    /// Applies a legal action to the game state.
     pub fn apply_action(&mut self, action: Action) -> Result<Option<Piece>, GameError> {
         self.is_action_legal(action)?;
 
@@ -154,7 +184,11 @@ impl GameState {
         }
     }
 
-    fn validate_move(&self, action: MoveAction) -> Result<(), GameError> {
+    fn validate_move_for_side(
+        &self,
+        action: MoveAction,
+        side_to_move: Color,
+    ) -> Result<(), GameError> {
         let moving_piece = self
             .board
             .piece_at(action.from)
@@ -165,7 +199,7 @@ impl GameState {
             return Err(GameError::PromotionNotImplemented);
         }
 
-        if moving_piece.color != self.side_to_move {
+        if moving_piece.color != side_to_move {
             return Err(GameError::WrongSideToMove);
         }
 

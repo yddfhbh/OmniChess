@@ -1,4 +1,5 @@
 use crate::action::Action;
+use crate::search::{SearchResult, search_best_action};
 use crate::state::GameState;
 use std::io::{self, BufRead, Write};
 
@@ -8,6 +9,8 @@ e2e4       make a move in UCI format
 a7a8q      parsed, but promotion is not implemented
 moves      list all legal actions
 moves e2   list legal actions from one square
+go depth <0-8>    calculate the best move without playing it
+play depth <0-8>  calculate and play the best move
 board      print the current board
 help       show this help message
 quit       exit the program
@@ -58,6 +61,48 @@ pub fn run_cli<R: BufRead, W: Write>(mut reader: R, writer: &mut W) -> io::Resul
             continue;
         }
 
+        if let Some(depth) = parse_depth_command(&lowercase, "go") {
+            match depth {
+                Some(depth) => {
+                    let result = search_best_action(&game, depth);
+                    write_search_result(writer, &result)?;
+                }
+                None => writeln!(writer, "usage: go depth <0-8>")?,
+            }
+            continue;
+        }
+
+        if let Some(depth) = parse_depth_command(&lowercase, "play") {
+            match depth {
+                Some(depth) => {
+                    let result = search_best_action(&game, depth);
+                    write_search_result(writer, &result)?;
+
+                    let Some(best_action) = result.best_action else {
+                        writeln!(writer, "no legal actions")?;
+                        continue;
+                    };
+
+                    match game.apply_action(best_action) {
+                        Ok(_) => {
+                            writeln!(writer)?;
+                            writeln!(writer, "{}", game.board())?;
+
+                            if let Some(result) = game.result() {
+                                writeln!(writer, "{result}")?;
+                                return Ok(());
+                            }
+                        }
+                        Err(error) => {
+                            panic!("search returned illegal action {best_action}: {error}");
+                        }
+                    }
+                }
+                None => writeln!(writer, "usage: play depth <0-8>")?,
+            }
+            continue;
+        }
+
         if let Some((command, square_text)) = lowercase.split_once(char::is_whitespace)
             && command == "moves"
         {
@@ -91,6 +136,33 @@ pub fn run_cli<R: BufRead, W: Write>(mut reader: R, writer: &mut W) -> io::Resul
     }
 }
 
+fn parse_depth_command(input: &str, command: &str) -> Option<Option<u8>> {
+    let mut parts = input.split_whitespace();
+    let first = parts.next()?;
+    if first != command {
+        return None;
+    }
+
+    let Some(keyword) = parts.next() else {
+        return Some(None);
+    };
+    if keyword != "depth" {
+        return Some(None);
+    }
+
+    let Some(depth_text) = parts.next() else {
+        return Some(None);
+    };
+    if parts.next().is_some() {
+        return Some(None);
+    }
+
+    match depth_text.parse::<u8>() {
+        Ok(depth) if depth <= 8 => Some(Some(depth)),
+        _ => Some(None),
+    }
+}
+
 fn write_actions<W: Write>(writer: &mut W, actions: &[Action]) -> io::Result<()> {
     if actions.is_empty() {
         writeln!(writer, "no legal actions")
@@ -101,6 +173,21 @@ fn write_actions<W: Write>(writer: &mut W, actions: &[Action]) -> io::Result<()>
             .collect::<Vec<_>>()
             .join(" ");
         writeln!(writer, "{line}")
+    }
+}
+
+fn write_search_result<W: Write>(writer: &mut W, result: &SearchResult) -> io::Result<()> {
+    match result.best_action {
+        Some(action) => writeln!(
+            writer,
+            "bestmove {action} score {} depth {} nodes {}",
+            result.score, result.depth, result.nodes
+        ),
+        None => writeln!(
+            writer,
+            "bestmove none score {} depth {} nodes {}",
+            result.score, result.depth, result.nodes
+        ),
     }
 }
 
@@ -186,6 +273,7 @@ mod tests {
 
         assert!(output.contains("commands:"));
         assert!(output.contains("moves e2"));
+        assert!(output.contains("go depth <0-8>"));
         assert!(output.contains("quit"));
     }
 
@@ -209,6 +297,70 @@ mod tests {
     fn king_capture_prints_result_and_exits() {
         let output = run("e2e4\nf7f6\nd1h5\na7a6\nh5e8\n");
 
+        assert!(output.contains("White wins"));
+    }
+
+    #[test]
+    fn go_depth_one_prints_bestmove() {
+        let output = run("go depth 1\nquit\n");
+
+        assert!(output.contains("bestmove "));
+        assert!(output.contains(" depth 1 "));
+    }
+
+    #[test]
+    fn go_depth_one_does_not_change_state() {
+        let output = run("go depth 1\nboard\nquit\n");
+
+        assert!(output.matches("8 r n b q k b n r").count() >= 2);
+        assert_eq!(output.matches("White>").count(), 3);
+    }
+
+    #[test]
+    fn play_depth_one_applies_move() {
+        let output = run("play depth 1\nquit\n");
+
+        assert!(output.contains("bestmove "));
+        assert!(output.contains("Black>"));
+    }
+
+    #[test]
+    fn play_depth_one_changes_turn_and_ply() {
+        let output = run("play depth 1\nplay depth 1\nquit\n");
+
+        assert!(output.matches("bestmove ").count() >= 2);
+        assert!(output.contains("White>"));
+        assert!(output.contains("Black>"));
+    }
+
+    #[test]
+    fn invalid_go_usage_prints_usage_and_continues() {
+        let output = run("go\nquit\n");
+
+        assert!(output.contains("usage: go depth <0-8>"));
+        assert_eq!(output.matches("White>").count(), 2);
+    }
+
+    #[test]
+    fn invalid_play_usage_prints_usage_and_continues() {
+        let output = run("play depth -1\nquit\n");
+
+        assert!(output.contains("usage: play depth <0-8>"));
+        assert_eq!(output.matches("White>").count(), 2);
+    }
+
+    #[test]
+    fn go_depth_nine_is_rejected() {
+        let output = run("go depth 9\nquit\n");
+
+        assert!(output.contains("usage: go depth <0-8>"));
+    }
+
+    #[test]
+    fn play_after_king_capture_prints_result_and_exits() {
+        let output = run("e2e4\nf7f6\nd1h5\na7a6\nplay depth 1\n");
+
+        assert!(output.contains("bestmove h5e8"));
         assert!(output.contains("White wins"));
     }
 }
